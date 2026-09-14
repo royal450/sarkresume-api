@@ -13,25 +13,43 @@ app.use(cors({ origin: true }));
 app.use(express.json({ limit: '10mb' }));
 
 /* ═══════════════════════════════════════════════
-   FIREBASE ADMIN SETUP — Direct JSON file read
-   (No .env needed for Firebase)
+   FIREBASE ADMIN SETUP
+   Priority: 1) Render secret file  2) Env var  3) Local file
    ═══════════════════════════════════════════════ */
 let db = null;
 try {
-  const jsonPath = path.join(
-    __dirname,
-    'sarkresume-firebase-adminsdk-fbsvc-e121c3edde.json'
-  );
+  let serviceAccount = null;
 
-  if (!fs.existsSync(jsonPath)) {
-    throw new Error(
-      'Firebase JSON not found. Please place it in sarkresume-api/ folder'
-    );
+  // 1️⃣ Render Secret File (production)
+  const secretPath = '/etc/secrets/firebase-service-account.json';
+  if (fs.existsSync(secretPath)) {
+    serviceAccount = JSON.parse(fs.readFileSync(secretPath, 'utf8'));
+    console.log('📁 Firebase loaded from Render secret file');
   }
 
-  const serviceAccount = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  // 2️⃣ Environment Variable (fallback)
+  if (!serviceAccount && process.env.FIREBASE_SERVICE_ACCOUNT) {
+    serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    console.log('🌍 Firebase loaded from env var');
+  }
 
-  // Fix private key newlines (agar JSON me \n string hai)
+  // 3️⃣ Local File (development)
+  if (!serviceAccount) {
+    const localPath = path.join(
+      __dirname,
+      'sarkresume-firebase-adminsdk-fbsvc-46a8ab394c.json'
+    );
+    if (fs.existsSync(localPath)) {
+      serviceAccount = JSON.parse(fs.readFileSync(localPath, 'utf8'));
+      console.log('💻 Firebase loaded from local file');
+    }
+  }
+
+  if (!serviceAccount) {
+    throw new Error('Firebase credentials not found anywhere');
+  }
+
+  // Fix private key newlines (agar \n string me hai)
   if (
     serviceAccount.private_key &&
     serviceAccount.private_key.includes('\\n')
@@ -59,7 +77,7 @@ try {
 let razorpay = null;
 try {
   if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
-    throw new Error('Razorpay keys missing in .env');
+    throw new Error('Razorpay keys missing in environment variables');
   }
 
   razorpay = new Razorpay({
